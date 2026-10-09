@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WarGreymon Control</title>
+<meta name="theme-color" content="#14110f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icono-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #14110f; --panel: #1e1a17; --panel2: #272220; --line: #3a322c;
+    --fg: #f3ece6; --muted: #a8998c; --accent: #ff7a1a; --accent2: #ffb36b;
+    --ok: #4cc38a; --warn: #f2c94c; --danger: #e5484d; --white: #fff;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: max(12px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    max-width: 980px; margin: 0 auto;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-block: 4px 12px; }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: .02em; }
+  header h1 span { color: var(--accent); }
+  .chip { font-size: 12px; padding: 4px 10px; border-radius: 99px; background: var(--panel2);
+          color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+  .chip.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+  .chip.demo { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+  .spacer { flex: 1; }
+  button {
+    font: inherit; color: var(--fg); background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 14px; cursor: pointer; touch-action: manipulation;
+  }
+  button:hover { border-color: var(--muted); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); color: #1a0d03; border-color: var(--accent); font-weight: 600; }
+
+  .grid { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; min-width: 0; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+               margin: 0 0 10px; font-weight: 600; }
+
+  /* Estado + arranque */
+  .estado { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .estado b { font-size: 30px; letter-spacing: .02em; }
+  .estado small { color: var(--muted); }
+  .cuenta { font-size: 64px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1; }
+  .acciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .acciones button { padding: 18px; font-size: 18px; font-weight: 700; border-radius: 12px; }
+  #btnStart { background: var(--ok); color: #06210f; border-color: var(--ok); }
+  #btnStop { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 10px; }
+  .seg button.sel { background: var(--accent); color: #1a0d03; font-weight: 600; }
+  label.fila { display: grid; grid-template-columns: auto 1fr 3.5em; gap: 10px; align-items: center; margin-top: 12px; color: var(--muted); font-size: 13px; }
+  label.fila output { text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  /* Joystick */
+  .manual { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  #joy { width: 200px; height: 200px; border-radius: 50%; position: relative; touch-action: none;
+         background: radial-gradient(circle, var(--panel2) 0 60%, var(--bg) 61%); border: 1px solid var(--line); }
+  #joy::before, #joy::after { content: ""; position: absolute; background: var(--line); }
+  #joy::before { left: 50%; top: 12px; bottom: 12px; width: 1px; }
+  #joy::after { top: 50%; left: 12px; right: 12px; height: 1px; }
+  #knob { position: absolute; width: 70px; height: 70px; border-radius: 50%; left: 65px; top: 65px; z-index: 1;
+          background: var(--accent); box-shadow: 0 4px 14px rgb(0 0 0 / .5); transition: transform .08s; }
+  #joy.activo #knob { transition: none; }
+  .nota { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .bloqueado { opacity: .35; pointer-events: none; }
+
+  /* Motores */
+  .motores { display: grid; grid-template-columns: auto 1fr 3.5em; gap: 8px 10px; align-items: center; font-size: 13px; }
+  .barra { height: 12px; background: var(--panel2); border-radius: 6px; position: relative; overflow: hidden; }
+  .barra::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
+  .barra i { position: absolute; top: 0; bottom: 0; background: var(--accent); }
+  .motores output { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Sensores */
+  svg text { font-family: inherit; }
+  #robot { width: 100%; height: auto; display: block; }
+  .leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  #mapa { width: 100%; max-width: 360px; aspect-ratio: 1; display: block; margin: 0 auto; }
+
+  /* Bitácora */
+  #log { font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; background: var(--bg);
+         border: 1px solid var(--line); border-radius: 8px; padding: 8px; height: 150px; overflow: auto;
+         white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+  #log .tx { color: var(--accent2); } #log .err { color: var(--danger); }
+  .cal { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .cal .nota { margin: 0; }
+  #btnCal.activo { background: var(--warn); color: #241a00; border-color: var(--warn); font-weight: 600; }
+  .accion { margin-top: 10px; font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+  .accion.ataque { color: var(--danger); } .accion.linea { color: var(--warn); } .accion.busca { color: var(--accent2); }
+  label.prueba { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  label.prueba input { accent-color: var(--warn); width: 18px; height: 18px; margin: 0; flex: none; }
+  .simCtl { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+  .simCtl select { font: inherit; color: var(--fg); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  #simMarcador { margin-left: auto; color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .aviso { background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+           font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>War<span>Greymon</span></h1>
+  <span id="chip" class="chip">Desconectado</span>
+  <span class="spacer"></span>
+  <button id="btnDemo">Modo demo</button>
+  <button id="btnConectar" class="primary">Conectar Bluetooth</button>
+</header>
+
+<section id="avisoBT" class="aviso" hidden style="margin-bottom:12px"></section>
+
+<div class="grid">
+  <section>
+    <h2>Combate</h2>
+    <div class="estado"><b id="txtEstado">Sin conexión</b><small id="txtModo"></small></div>
+    <div id="cuenta" class="cuenta" hidden>5.0</div>
+    <div id="accion" class="accion" hidden></div>
+    <div class="acciones">
+      <button id="btnStart" disabled>ARRANCAR</button>
+      <button id="btnStop" disabled>DETENER</button>
+    </div>
+    <div class="seg" id="seg">
+      <button data-modo="A" class="sel">Autónomo</button>
+      <button data-modo="M">Manual</button>
+    </div>
+    <label class="fila">Velocidad autónomo <input id="vel" type="range" min="0" max="255" value="180"><output id="velOut">180</output></label>
+    <label class="prueba"><input type="checkbox" id="chkPrueba"> <span><b>Modo prueba</b>: en autónomo decide con sus sensores pero <b>no mueve los motores</b></span></label>
+    <label class="fila">Velocidad manual <input id="velMan" type="range" min="40" max="255" value="160"><output id="velManOut">160</output></label>
+  </section>
+
+  <section id="secManual">
+    <h2>Control manual</h2>
+    <div class="manual">
+      <div id="joy"><div id="knob"></div></div>
+      <div style="flex:1;min-width:180px">
+        <div class="motores">
+          <span>Izq</span><div class="barra"><i id="barI"></i></div><output id="valI">0</output>
+          <span>Der</span><div class="barra"><i id="barD"></i></div><output id="valD">0</output>
+        </div>
+        <p class="nota">Elige <b>Manual</b> y pulsa ARRANCAR (cuenta de 5 s). En PC también sirven las flechas o WASD. Si sueltas el control o se corta la señal, el robot frena en 0.3 s.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sensores</h2>
+    <svg id="robot" viewBox="-300 -295 600 400" aria-label="Vista superior del robot con sensores"></svg>
+    <div class="leyenda">
+      <span><i style="background:var(--accent)"></i>VL53L0X ve algo (&lt; 77 cm)</span>
+      <span><i style="background:var(--white)"></i>QRE sobre línea blanca</span>
+      <span><i style="background:var(--danger)"></i>sensor sin respuesta</span>
+    </div>
+    <div class="cal">
+      <button id="btnCal" disabled>Calibrar línea</button>
+      <button id="btnCalFin" hidden>Terminar sin gris</button>
+      <span id="calEstado" class="nota">Umbrales: sin datos</span>
+    </div>
+    <p class="nota" id="calAyuda" hidden></p>
+  </section>
+
+  <section id="secMapa" hidden>
+    <h2>Dohyo simulado (demo)</h2>
+    <div class="simCtl">
+      <label>Rival <select id="simRival"><option value="quieto">quieto</option><option value="deambula" selected>se mueve</option><option value="ataca">ataca</option></select></label>
+      <label>Salida <select id="simSalida"><option value="frente" selected>de frente</option><option value="lado">de lado</option><option value="espaldas">de espaldas</option></select></label>
+      <button id="simReset">Reacomodar</button>
+      <span id="simMarcador">WarGreymon 0 – 0 rival</span>
+    </div>
+    <svg id="mapa" viewBox="-420 -420 840 840"></svg>
+    <p class="nota">El robot naranja usa <b>la misma estrategia que el firmware</b>: busca girando, ataca al verlo de frente, gira hacia el flanco y esquiva la línea. Gana quien saque al otro. Usa <b>Autónomo → ARRANCAR</b>.</p>
+  </section>
+
+  <section style="grid-column: 1 / -1">
+    <h2>Bitácora</h2>
+    <div id="log"></div>
+  </section>
+</div>
+
+<script>
+// ---------------------------------------------------------------- protocolo
+// Servicio Nordic UART. Órdenes en texto; telemetría:
+// T,estado,modo,cuenta_ds,vel,qFI,qFD,qTI,qTD,tFI,tFD,tIZQ,tDER,mI,mD,accion,prueba
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const ALCANCE_DOHYO = 770;
+
+const $ = id => document.getElementById(id);
+const guardar = (k, v) => { try { localStorage.setItem('wg.' + k, v); } catch {} };
+const leer = (k, d) => { try { return localStorage.getItem('wg.' + k) ?? d; } catch { return d; } };
+
+// ---------------------------------------------------------------- bitácora
+function log(texto, clase = '') {
+  const el = $('log');
+  const linea = document.createElement('div');
+  if (clase) linea.className = clase;
+  linea.textContent = new Date().toLocaleTimeString() + '  ' + texto;
+  el.append(linea);
+  while (el.childNodes.length > 200) el.firstChild.remove();
+  el.scrollTop = el.scrollHeight;
+}
+
+// ---------------------------------------------------------------- transporte BLE
+class TransporteBLE {
+  constructor(alRecibir, alCerrar) { this.alRecibir = alRecibir; this.alCerrar = alCerrar; this.cola = []; this.ocupado = false; }
+  async conectar() {
+    this.dispositivo = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'WarGreymon' }, { services: [NUS] }], optionalServices: [NUS] });
+    this.dispositivo.addEventListener('gattserverdisconnected', () => this.alCerrar());
+    const gatt = await this.dispositivo.gatt.connect();
+    const servicio = await gatt.getPrimaryService(NUS);
+    this.rx = await servicio.getCharacteristic(NUS_RX);
+    const tx = await servicio.getCharacteristic(NUS_TX);
+    const dec = new TextDecoder();
+    tx.addEventListener('characteristicvaluechanged', e => this.alRecibir(dec.decode(e.target.value)));
+    await tx.startNotifications();
+    return this.dispositivo.name;
+  }
+  // Una operación GATT a la vez; de las órdenes MAN solo importa la más reciente.
+  enviar(orden) {
+    if (orden.startsWith('MAN ')) this.cola = this.cola.filter(o => !o.startsWith('MAN '));
+    this.cola.push(orden);
+    this.bombear();
+  }
+  async bombear() {
+    if (this.ocupado || !this.cola.length || !this.rx) return;
+    this.ocupado = true;
+    const orden = this.cola.shift();
+    try {
+      const datos = new TextEncoder().encode(orden);
+      if (this.rx.writeValueWithoutResponse) await this.rx.writeValueWithoutResponse(datos);
+      else await this.rx.writeValue(datos);
+    } catch (e) { log('Error al enviar: ' + e.message, 'err'); }
+    this.ocupado = false;
+    this.bombear();
+  }
+  cerrar() { if (this.dispositivo?.gatt.connected) this.dispositivo.gatt.disconnect(); }
+}
+
+// ---------------------------------------------------------------- transporte DEMO (robot simulado)
+// Habla exactamente el mismo protocolo que el firmware y corre LA MISMA estrategia
+// (copia de reaccionLinea() y estrategia() de src/prueba_ble.cpp). Si cambias una, cambia la otra.
+const SIM = {
+  R_DOHYO: 385, R_NEGRO: 360,          // mm: borde blanco de 2.5 cm
+  DT: 0.02,                            // s por paso
+  V_MAX: 500,                          // mm/s a 255
+  EJE: 80,                             // mm entre ruedas
+  R_ROBOT: 50,                         // aproximación circular de la huella de 10 × 10
+  QRE_NEGRO: 2400, QRE_GRIS: 500, QRE_BLANCO: 10,
+  UMBRAL: 250, HIST: 80,               // como si se hubiera calibrado con gris
+};
+const ESTRATEGIA = { ALCANCE_RIVAL: 600, T_CONTACTO: 300, TAN10: 0.176, MIN_VALIDO: 40, FLANCO_CERCA: 150,
+  T_BUSCA_GIRO: 1400, T_BUSCA_AVANCE: 600,
+  T_FRENO: 40, T_EMPUJE_FINAL: 150, T_RETRO_RECTO: 180, T_RETRO_CURVA: 350, T_RETRO_CURVA_180: 500,
+  T_AVANCE_FUERTE: 250, T_GIRO_CENTRO: 220, ENFRIAR_EMPUJE: 1000 };
+
+class TransporteDemo {
+  constructor(alRecibir) {
+    this.alRecibir = alRecibir;
+    this.estado = 'E'; this.modo = 'A'; this.vel = 180; this.prueba = 0;
+    this.man = [0, 0]; this.ultimaMan = 0; this.motores = [0, 0];
+    this.marcador = { robot: 0, rival: 0 };
+    this.t = 0;
+    this.reacomodar();
+  }
+  // Posiciones de salida: detrás de las líneas grises (y = ±50 mm), según el selector del mapa.
+  reacomodar() {
+    const salida = $('simSalida')?.value || 'frente';
+    const giro = { frente: 0, lado: Math.PI / 2, espaldas: Math.PI }[salida];
+    this.r = { x: 0, y: -130, th: giro };
+    this.rv = { x: 0, y: 130, th: Math.PI, obj: null };
+    this.maniobra = 'CRUCERO'; this.inicioManiobra = 0; this.finManiobra = 0; this.giroSentido = 1; this.ultimoEmpujeFinal = -1e9;
+    this.tof = [9999, 9999, 9999, 9999];
+    this.accion = 'ESPERA'; this.ultimoLado = 1; this.ultimoAtaque = -1e9; this.ultimaVista = this.t;
+    this.enLinea = [false, false, false, false]; this.cuentaBlanco = [0, 0, 0, 0];
+  }
+  async conectar() {
+    this.timer = setInterval(() => this.paso(), SIM.DT * 1000);
+    setTimeout(() => this.alRecibir('I,robot simulado listo'), 100);
+    return 'WarGreymon (demo)';
+  }
+  cerrar() { clearInterval(this.timer); }
+  enviar(orden) {
+    const [cmd, a, b] = orden.trim().split(/\s+/);
+    if (cmd === 'START') {
+      if (this.estado === 'E') { this.estado = 'C'; this.inicio = this.t; this.alRecibir('I,cuenta de 5 s'); }
+      else this.detener('arranque cancelado');
+    } else if (cmd === 'STOP') this.detener('orden STOP');
+    else if (cmd === 'PING') this.alRecibir('PONG');
+    else if (cmd === 'PRUEBA') {
+      this.prueba = a === '1' ? 1 : 0;
+      this.alRecibir(this.prueba ? 'I,modo prueba: decide pero NO mueve los motores' : 'I,modo prueba apagado: motores activos');
+    } else if (cmd === 'CAL') {
+      if (a === 'NEGRO') this.alRecibir('I,negro medido (demo)');
+      if (a === 'GRIS') this.alRecibir('I,midiendo gris (demo)');
+      if (a === 'INICIO') this.alRecibir('I,calibrando: pasa cada sensor por negro y por blanco');
+      if (a === 'FIN') this.alRecibir('I,calibracion guardada (demo)');
+      const { UMBRAL: u, HIST: h } = SIM;
+      this.alRecibir(`U,1,${u},${u},${u},${u},${h},${h},${h},${h}`);
+    }
+    else if (cmd === 'MODO' && (a === 'A' || a === 'M') && a !== this.modo) { this.modo = a; this.detener(a === 'M' ? 'modo manual' : 'modo autonomo'); }
+    else if (cmd === 'VEL') this.vel = Math.max(0, Math.min(255, +a));
+    else if (cmd === 'MAN') { this.man = [+a, +b]; this.ultimaMan = this.t; }
+  }
+  detener(motivo) { this.estado = 'E'; this.man = [0, 0]; this.alRecibir('I,detenido: ' + motivo); }
+
+  // ---- geometría (mm; th = 0 mira hacia +y, + gira a la derecha)
+  static TOF = [[-20, 38.5, 10], [20, 38.5, -10], [-43, 26, -90], [43, 26, 90]];
+  static QRE = [[-35, 28.5], [35, 28.5], [-34, -40.5], [34, -40.5]];
+  aMundo(c, px, py) {
+    const co = Math.cos(c.th), s = Math.sin(c.th);
+    return { x: c.x + px * co + py * s, y: c.y - px * s + py * co };
+  }
+  medir() {
+    const tof = TransporteDemo.TOF.map(([px, py, ang]) => {
+      const p = this.aMundo(this.r, px, py);
+      const dir = this.r.th + ang * Math.PI / 180;
+      const dx = this.rv.x - p.x, dy = this.rv.y - p.y, d = Math.hypot(dx, dy);
+      const haciaRival = Math.atan2(dx, dy);
+      const dif = Math.abs(Math.atan2(Math.sin(haciaRival - dir), Math.cos(haciaRival - dir)));
+      if (dif > 12.5 * Math.PI / 180 + Math.atan(SIM.R_ROBOT / d)) return 9999;
+      return Math.max(5, Math.round(d - SIM.R_ROBOT + (Math.random() - .5) * 16));
+    });
+    const qre = TransporteDemo.QRE.map(([px, py]) => {
+      const p = this.aMundo(this.r, px, py), r = Math.hypot(p.x, p.y);
+      let base = SIM.QRE_NEGRO;
+      if (r > SIM.R_DOHYO) base = 4095;                                 // fuera: "aire"
+      else if (r > SIM.R_NEGRO) base = SIM.QRE_BLANCO;
+      else if (Math.abs(p.x) < 60 && Math.abs(Math.abs(p.y) - 50) < 5) base = SIM.QRE_GRIS;   // líneas de salida
+      return Math.max(0, Math.round(base + (Math.random() - .5) * 60));
+    });
+    return { tof, qre };
+  }
+
+  // ---- copia de reaccionLinea() / estrategia() del firmware
+  escalar(ms) { return ms * 150 / Math.max(this.vel, 60); }
+  iniciarManiobra(m, ms) { this.maniobra = m; this.inicioManiobra = this.t; this.finManiobra = this.t + ms; }
+  ve(i) { return this.tof[i] >= ESTRATEGIA.MIN_VALIDO && this.tof[i] < ESTRATEGIA.ALCANCE_RIVAL; }
+  pegado(i) { return this.tof[i] >= 0 && this.tof[i] < ESTRATEGIA.MIN_VALIDO; }
+  enContacto() { return this.t - this.ultimoAtaque < ESTRATEGIA.T_CONTACTO && (this.pegado(0) || this.pegado(1)); }
+  rivalAlFrente() { return this.ve(0) || this.ve(1) || this.enContacto(); }
+  retirarse(fi, fd) {
+    const E = ESTRATEGIA;
+    if (this.rivalAlFrente()) {
+      this.iniciarManiobra('RETRO_RECTO', E.T_FRENO + this.escalar(E.T_RETRO_RECTO));
+      this.alRecibir('I,linea adelante con rival enfrente -> atras recto, sin darle la espalda');
+    } else {
+      this.giroSentido = fi && fd ? (Math.random() < .5 ? 1 : -1) : (fi ? 1 : -1);
+      this.iniciarManiobra('RETRO_CURVA', E.T_FRENO + this.escalar(fi && fd ? E.T_RETRO_CURVA_180 : E.T_RETRO_CURVA));
+      this.alRecibir(`I,linea ${fi ? 'FI' : ''}${fd ? 'FD' : ''} -> atras en curva ${this.giroSentido > 0 ? 'der' : 'izq'}`);
+    }
+  }
+  reaccionLinea() {
+    const [fi, fd, ti, td] = this.enLinea, frente = fi || fd, atras = ti || td, E = ESTRATEGIA;
+    const retirandose = this.maniobra === 'RETRO_RECTO' || this.maniobra === 'RETRO_CURVA';
+    if ((fi && ti && !fd && !td) || (fd && td && !fi && !ti)) {
+      if (this.maniobra !== 'GIRO_CENTRO') {
+        this.giroSentido = fi ? 1 : -1;
+        this.iniciarManiobra('GIRO_CENTRO', this.escalar(E.T_GIRO_CENTRO));
+        this.alRecibir(fi ? 'I,costado izq en la linea -> giro der' : 'I,costado der en la linea -> giro izq');
+      }
+    } else if (frente && this.maniobra !== 'EMPUJE_FINAL' && !retirandose && this.maniobra !== 'GIRO_CENTRO') {
+      if (this.enContacto() && this.t - this.ultimoEmpujeFinal > E.ENFRIAR_EMPUJE) {
+        this.ultimoEmpujeFinal = this.t;
+        this.iniciarManiobra('EMPUJE_FINAL', E.T_EMPUJE_FINAL);
+        this.alRecibir('I,linea empujando al rival -> EMPUJE FINAL');
+      } else this.retirarse(fi, fd);
+    } else if (atras && !frente && retirandose) {
+      this.iniciarManiobra('GIRO_CENTRO', this.escalar(E.T_GIRO_CENTRO));
+      this.alRecibir('I,linea atras durante la retirada -> giro');
+    } else if (atras && !frente && this.maniobra !== 'AVANCE_FUERTE' && this.maniobra !== 'GIRO_CENTRO') {
+      this.iniciarManiobra('AVANCE_FUERTE', E.T_AVANCE_FUERTE);
+      this.alRecibir('I,linea atras (me empujan) -> adelante a fondo');
+    }
+    if (this.maniobra !== 'CRUCERO' && this.t >= this.finManiobra) {
+      if (this.maniobra === 'EMPUJE_FINAL' && (this.enLinea[0] || this.enLinea[1])) this.retirarse(this.enLinea[0], this.enLinea[1]);
+      else this.maniobra = 'CRUCERO';
+    }
+    const v = this.vel, g = this.giroSentido, frenando = this.t - this.inicioManiobra < E.T_FRENO;
+    switch (this.maniobra) {
+      case 'CRUCERO': return null;
+      case 'EMPUJE_FINAL': case 'AVANCE_FUERTE': return [255, 255];
+      case 'RETRO_RECTO': return frenando ? [0, 0] : [-v, -v];
+      case 'RETRO_CURVA': return frenando ? [0, 0] : (g > 0 ? [v / 5, -v] : [-v, v / 5]);
+      case 'GIRO_CENTRO': return [v * g, -v * g];
+    }
+  }
+  estrategia() {
+    const E = ESTRATEGIA, v = this.vel, tof = this.tof;
+    const fi = this.ve(0), fd = this.ve(1), iz = this.ve(2), de = this.ve(3), contacto = this.enContacto();
+    let m;
+    if (contacto && this.pegado(0) !== this.pegado(1)) {
+      this.ultimoLado = this.pegado(1) ? 1 : -1;
+      this.accion = this.ultimoLado > 0 ? 'ATACAR_D' : 'ATACAR_I';
+      m = this.ultimoLado > 0 ? [v, v * .3] : [v * .3, v];
+    }
+    else if ((fi && fd) || contacto) { this.accion = 'ATACAR'; m = [v, v]; }
+    else if (fi || fd) {
+      const x = fi ? -20 + tof[0] * E.TAN10 : 20 - tof[1] * E.TAN10;
+      if (x > 15)       { this.accion = 'ATACAR_D'; m = [v, v * .55]; this.ultimoLado = 1; }
+      else if (x < -15) { this.accion = 'ATACAR_I'; m = [v * .55, v]; this.ultimoLado = -1; }
+      else              { this.accion = 'ATACAR';   m = [v, v]; }
+    } else if (iz || de) {
+      this.ultimoLado = iz ? -1 : 1;
+      this.accion = iz ? 'FLANCO_I' : 'FLANCO_D';
+      const g = (iz ? tof[2] : tof[3]) < E.FLANCO_CERCA ? 255 : v * .7;
+      m = [g * this.ultimoLado, -g * this.ultimoLado];
+    } else {
+      this.accion = 'BUSCAR';
+      const fase = (this.t - this.ultimaVista) % (E.T_BUSCA_GIRO + E.T_BUSCA_AVANCE);
+      const g = v * .45;
+      m = fase < E.T_BUSCA_GIRO ? [g * this.ultimoLado, -g * this.ultimoLado] : [v / 2, v / 2];
+    }
+    if (fi || fd || iz || de || contacto) this.ultimaVista = this.t;
+    if (this.accion.startsWith('ATACAR')) this.ultimoAtaque = this.t;
+    return m;
+  }
+
+  // ---- rival: quieto, deambula o ataca
+  moverRival() {
+    const modo = $('simRival')?.value || 'deambula', rv = this.rv, dt = SIM.DT;
+    if (modo === 'quieto' || this.estado !== 'A') return 0;
+    if (modo === 'deambula' && Math.hypot(this.r.x - rv.x, this.r.y - rv.y) < 2 * SIM.R_ROBOT + 5) return 0;   // trabado en el choque
+    let ox, oy, vel;
+    if (modo === 'ataca') { ox = this.r.x; oy = this.r.y; vel = 220; }
+    else {
+      if (!rv.obj || Math.hypot(rv.obj.x - rv.x, rv.obj.y - rv.y) < 30) {
+        const a = Math.random() * 2 * Math.PI, d = Math.random() * 230;
+        rv.obj = { x: d * Math.sin(a), y: d * Math.cos(a) };
+      }
+      ox = rv.obj.x; oy = rv.obj.y; vel = 90;
+    }
+    const deseado = Math.atan2(ox - rv.x, oy - rv.y);
+    const dif = Math.atan2(Math.sin(deseado - rv.th), Math.cos(deseado - rv.th));
+    rv.th += Math.max(-3 * dt, Math.min(3 * dt, dif));
+    const v = Math.abs(dif) < 0.6 ? vel : 0;
+    rv.x += Math.sin(rv.th) * v * dt; rv.y += Math.cos(rv.th) * v * dt;
+    return v;
+  }
+
+  paso() {
+    const dt = SIM.DT;
+    this.t += dt * 1000;
+    if (this.estado === 'C' && this.t - this.inicio >= 5000) {
+      this.estado = 'A'; this.maniobra = 'CRUCERO';
+      this.alRecibir(this.modo === 'M' ? 'I,manual activo' : 'I,combate!');
+    }
+    const { tof, qre } = this.medir();
+    this.tof = tof;
+    // línea: umbral − histéresis, confirmada con 2 lecturas (como el firmware)
+    qre.forEach((q, i) => {
+      if (q < SIM.UMBRAL - SIM.HIST) {
+        this.cuentaBlanco[i] = Math.min(2, this.cuentaBlanco[i] + 1);
+        if (this.cuentaBlanco[i] >= 2) this.enLinea[i] = true;
+      } else {
+        this.cuentaBlanco[i] = 0;
+        if (q > SIM.UMBRAL + SIM.HIST) this.enLinea[i] = false;
+      }
+    });
+    let m = [0, 0];
+    if (this.estado !== 'A') this.accion = 'ESPERA';
+    else if (this.modo === 'M') { this.accion = 'MANUAL'; if (this.t - this.ultimaMan <= 300) m = this.man; }
+    else {
+      const l = this.reaccionLinea();
+      if (l) { this.accion = 'LINEA'; m = l; } else m = this.estrategia();
+    }
+    this.motores = m.map(Math.round);
+    const fisico = this.prueba && this.modo === 'A' ? [0, 0] : this.motores;
+
+    // cinemática diferencial del robot
+    const vi = fisico[0] / 255 * SIM.V_MAX, vd = fisico[1] / 255 * SIM.V_MAX;
+    this.r.th += (vi - vd) / SIM.EJE * dt;
+    const vr = (vi + vd) / 2;
+    this.r.x += Math.sin(this.r.th) * vr * dt; this.r.y += Math.cos(this.r.th) * vr * dt;
+    const vRival = this.moverRival();
+
+    // choque: separa a los dos; empuja más el que va más rápido hacia el otro
+    const dx = this.rv.x - this.r.x, dy = this.rv.y - this.r.y, d = Math.hypot(dx, dy);
+    if (d < 2 * SIM.R_ROBOT && d > 0) {
+      const nx = dx / d, ny = dy / d, solape = 2 * SIM.R_ROBOT - d;
+      const fR = Math.max(10, vr * (Math.sin(this.r.th) * nx + Math.cos(this.r.th) * ny));
+      const fV = Math.max(10, vRival * -(Math.sin(this.rv.th) * nx + Math.cos(this.rv.th) * ny)) + 30;
+      const kR = fR / (fR + fV);
+      // Empuje con la pala (rival al frente): lo arrastra en la dirección del robot, no de lado.
+      const hx = Math.sin(this.r.th), hy = Math.cos(this.r.th), conPala = hx * nx + hy * ny > 0.6;
+      const ex = conPala ? hx : nx, ey = conPala ? hy : ny;
+      this.rv.x += ex * solape * kR; this.rv.y += ey * solape * kR;
+      this.r.x -= nx * solape * (1 - kR); this.r.y -= ny * solape * (1 - kR);
+    }
+
+    // ¿alguien salió?
+    const fuera = c => Math.hypot(c.x, c.y) > SIM.R_DOHYO;
+    if (this.estado === 'A' && (fuera(this.rv) || fuera(this.r))) {
+      const gano = fuera(this.rv) && !fuera(this.r);
+      this.marcador[gano ? 'robot' : 'rival']++;
+      this.detener(gano ? '¡GANASTE! el rival salió del dohyo' : 'perdiste: WarGreymon salió del dohyo');
+      $('simMarcador').textContent = `WarGreymon ${this.marcador.robot} – ${this.marcador.rival} rival`;
+      setTimeout(() => this.reacomodar(), 800);
+    }
+
+    this.n = (this.n || 0) + 1;
+    if (this.n % 5 === 0) {
+      const cuenta = this.estado === 'C' ? Math.ceil((5000 - (this.t - this.inicio)) / 100) : 0;
+      this.alRecibir(['T', this.estado, this.modo, cuenta, this.vel, ...qre, ...tof, ...this.motores, this.accion, this.prueba].join(','));
+    }
+    dibujarMapa(this);
+  }
+}
+
+// ---------------------------------------------------------------- estado de la app
+let transporte = null;
+let ultimaT = 0;
+let modoSel = leer('modo', 'A');
+let estadoRobot = null;
+let umbrales = null;          // { cal, u: [4], h: [4] } — los manda el robot
+let calPaso = 0;              // 0 nada · 1 esperando negro · 2 midiendo blanco · 3 midiendo gris
+
+function alRecibir(linea) {
+  for (const l of linea.split('\n')) {
+    if (!l) continue;
+    if (l.startsWith('T,')) {
+      const p = l.split(',');
+      if (p.length !== 15 && p.length !== 17) { log('Telemetría incompleta: ' + l, 'err'); continue; }
+      ultimaT = performance.now();
+      const n = p.slice(3, 15).map(Number);
+      mostrarTelemetria({ estado: p[1], modo: p[2], cuenta: n[0], vel: n[1], qre: n.slice(2, 6), tof: n.slice(6, 10), mot: n.slice(10, 12),
+                          accion: p[15] ?? null, prueba: p[16] === '1' });
+    } else if (l.startsWith('U,')) {
+      const n = l.split(',').slice(1).map(Number);
+      umbrales = { cal: n[0] === 1, u: n.slice(1, 5), h: n.slice(5, 9) };
+      mostrarUmbrales();
+    } else if (l.startsWith('I,')) log('Robot: ' + l.slice(2));
+    else log('Robot: ' + l);
+  }
+}
+
+function alCerrar() {
+  log('Conexión perdida', 'err');
+  transporte = null;
+  actualizarConexion(null);
+}
+
+async function conectar(demo) {
+  try {
+    const t = demo ? new TransporteDemo(alRecibir) : new TransporteBLE(alRecibir, alCerrar);
+    const nombre = await t.conectar();
+    t.esDemo = demo;
+    transporte = t;
+    log('Conectado a ' + nombre);
+    actualizarConexion(nombre);
+    enviar('MODO ' + modoSel);
+    enviar('VEL ' + $('vel').value);
+    enviar('CAL ?');
+    enviar('PRUEBA ' + ($('chkPrueba').checked ? 1 : 0));
+  } catch (e) {
+    const cancelado = e.name === 'NotFoundError' && /cancel/i.test(e.message);
+    log(cancelado ? 'Conexión cancelada (no elegiste dispositivo)' : `No se pudo conectar: ${e.name}: ${e.message}`, cancelado ? '' : 'err');
+    if (/adapter|adaptador/i.test(e.message)) log('El Bluetooth de la PC parece apagado: actívalo en Configuración → Bluetooth y dispositivos', 'err');
+  }
+}
+
+function enviar(orden) {
+  if (!transporte) return;
+  transporte.enviar(orden);
+  if (!orden.startsWith('MAN ')) log('→ ' + orden, 'tx');
+}
+
+function actualizarConexion(nombre) {
+  const chip = $('chip');
+  const demo = transporte?.esDemo;
+  chip.textContent = nombre ? (demo ? 'Demo' : 'Conectado: ' + nombre) : 'Desconectado';
+  chip.className = 'chip' + (nombre ? (demo ? ' demo' : ' on') : '');
+  $('btnConectar').textContent = transporte && !demo ? 'Desconectar' : 'Conectar Bluetooth';
+  $('btnDemo').textContent = demo ? 'Salir de demo' : 'Modo demo';
+  $('btnStart').disabled = $('btnStop').disabled = $('btnCal').disabled = !nombre;
+  $('secMapa').hidden = !demo;
+  if (!nombre) { $('txtEstado').textContent = 'Sin conexión'; $('txtModo').textContent = ''; $('cuenta').hidden = true; estadoRobot = null; umbrales = null; mostrarUmbrales(); mostrarMotores([0, 0]);
+    calPaso = 0; mostrarPasoCal(); }
+}
+
+// ---------------------------------------------------------------- vista
+const NOMBRE_ESTADO = { E: 'En espera', C: 'Cuenta', A: 'En combate' };
+function mostrarTelemetria(t) {
+  estadoRobot = t.estado;
+  $('txtEstado').textContent = t.estado === 'A' && t.modo === 'M' ? 'Manual activo' : NOMBRE_ESTADO[t.estado] ?? t.estado;
+  $('txtModo').textContent = t.modo === 'M' ? 'modo manual' : 'modo autónomo · vel ' + t.vel;
+  $('cuenta').hidden = t.estado !== 'C';
+  $('cuenta').textContent = (t.cuenta / 10).toFixed(1);
+  $('btnStart').textContent = t.estado === 'E' ? 'ARRANCAR' : 'CANCELAR';
+  mostrarAccion(t);
+  if (t.modo !== modoSel) { modoSel = t.modo; marcarModo(); }
+  mostrarMotores(t.mot);
+  dibujarRobot(t);
+}
+
+const ACCIONES = {
+  BUSCAR: ['🔎 Buscando', 'busca'], ATACAR: ['⚔️ Atacando de frente', 'ataque'],
+  ATACAR_I: ['⚔️ Atacando ↰ (rival a la izq)', 'ataque'], ATACAR_D: ['⚔️ Atacando ↱ (rival a la der)', 'ataque'],
+  FLANCO_I: ['↺ Girando al rival por la izquierda', 'busca'], FLANCO_D: ['↻ Girando al rival por la derecha', 'busca'],
+  LINEA: ['⚠️ Esquivando la línea', 'linea'],
+};
+function mostrarAccion(t) {
+  const a = ACCIONES[t.accion];
+  const ver = t.estado === 'A' && t.modo === 'A' && a;
+  $('accion').hidden = !ver;
+  if (ver) { $('accion').textContent = a[0] + (t.prueba ? '  (prueba, sin motores)' : ''); $('accion').className = 'accion ' + a[1]; }
+  if ($('chkPrueba').checked !== t.prueba && t.accion !== null) $('chkPrueba').checked = t.prueba;
+}
+
+function mostrarMotores([i, d]) {
+  for (const [bar, out, v] of [['barI', 'valI', i], ['barD', 'valD', d]]) {
+    const pct = Math.abs(v) / 255 * 50;
+    Object.assign($(bar).style, { left: (v >= 0 ? 50 : 50 - pct) + '%', width: pct + '%' });
+    $(out).textContent = v;
+  }
+}
+
+// Vista superior del robot. Unidades: mm; y negativa = adelante (SVG).
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, padre) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); padre?.append(e); return e; };
+const TOF_GEO = [['FI', -20, -38.5, 10, -130, -272], ['FD', 20, -38.5, -10, 130, -272], ['IZQ', -43, -26, -90, -215, -55], ['DER', 43, -26, 90, 215, -55]];
+const QRE_GEO = [['FI', -35, -28.5], ['FD', 35, -28.5], ['TI', -34, 40.5], ['TD', 34, 40.5]];
+const escala = mm => 30 + Math.min(mm, 800) * 0.26;     // largo del haz en pantalla
+const vistaTof = [], vistaQre = [];
+
+function armarRobot() {
+  const svg = $('robot');
+  const haces = el('g', {}, svg);
+  el('rect', { x: -49, y: -49, width: 98, height: 98, rx: 8, fill: 'var(--panel2)', stroke: 'var(--muted)', 'stroke-width': 1.5 }, svg);
+  el('rect', { x: -49, y: -49, width: 98, height: 10, fill: 'var(--line)' }, svg);   // pala
+  for (const sx of [-1, 1]) el('rect', { x: sx > 0 ? 27 : -49, y: -1, width: 22, height: 33, rx: 4, fill: '#0b0908' }, svg);
+  el('text', { x: 0, y: 10, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--muted)' }, svg).textContent = 'WarGreymon';
+  el('path', { d: 'M -8 -60 L 0 -72 L 8 -60', fill: 'none', stroke: 'var(--muted)', 'stroke-width': 2 }, svg);
+  for (const [n, x, y, ang, lx, ly] of TOF_GEO) {
+    const g = el('g', { transform: `translate(${x} ${y}) rotate(${ang})` }, haces);
+    const cono = el('path', { fill: 'var(--accent)', 'fill-opacity': .15, stroke: 'none' }, g);
+    const linea = el('line', { x1: 0, y1: 0, x2: 0, y2: -30, stroke: 'var(--muted)', 'stroke-width': 2, 'stroke-dasharray': '4 4' }, g);
+    const txt = el('text', { x: lx, y: ly, 'text-anchor': 'middle', 'font-size': 15, fill: 'var(--fg)', 'font-variant-numeric': 'tabular-nums' }, svg);
+    el('circle', { cx: x, cy: y, r: 4, fill: 'var(--fg)' }, svg);
+    vistaTof.push({ n, cono, linea, txt });
+  }
+  for (const [n, x, y] of QRE_GEO) {
+    const c = el('circle', { cx: x, cy: y, r: 7, fill: '#000', stroke: 'var(--muted)', 'stroke-width': 1.5 }, svg);
+    const txt = el('text', { x: x + (x > 0 ? 14 : -14), y: y + 4, 'text-anchor': x > 0 ? 'start' : 'end', 'font-size': 12, fill: 'var(--muted)', 'font-variant-numeric': 'tabular-nums' }, svg);
+    vistaQre.push({ n, c, txt });
+  }
+  dibujarRobot(null);
+}
+
+function dibujarRobot(t) {
+  vistaTof.forEach((v, i) => {
+    const mm = t ? t.tof[i] : -1;
+    const ve = mm >= 40 && mm < ALCANCE_DOHYO;
+    const L = escala(mm < 0 || mm >= 9999 ? 800 : mm);
+    const w = Math.tan(12.5 * Math.PI / 180) * L;
+    v.cono.setAttribute('d', `M0 0 L${-w} ${-L} L${w} ${-L} Z`);
+    v.cono.setAttribute('fill-opacity', ve ? .45 : .08);
+    v.linea.setAttribute('y2', -L);
+    v.linea.setAttribute('stroke', mm < 0 ? 'var(--danger)' : ve ? 'var(--accent)' : 'var(--muted)');
+    v.txt.textContent = `${v.n} ${!t ? '—' : mm < 0 ? 'sin resp.' : mm >= 9999 ? 'lejos' : mm < 40 ? mm + ' ?' : mm + ' mm'}`;
+    v.txt.setAttribute('fill', mm < 0 && t ? 'var(--danger)' : ve ? 'var(--accent2)' : 'var(--fg)');
+  });
+  vistaQre.forEach((v, i) => {
+    const q = t ? t.qre[i] : null;
+    const blanco = q !== null && umbrales && q < umbrales.u[i] - umbrales.h[i];
+    v.c.setAttribute('fill', blanco ? 'var(--white)' : '#000');
+    v.c.setAttribute('stroke', blanco ? 'var(--danger)' : 'var(--muted)');
+    v.txt.textContent = `${v.n} ${q ?? '—'}`;
+    v.txt.setAttribute('fill', blanco ? 'var(--fg)' : 'var(--muted)');
+  });
+}
+
+// Mapa del dohyo (solo demo). Coordenadas del simulador: y hacia arriba → se invierte.
+let mapaEls = null;
+function dibujarMapa(sim) {
+  const svg = $('mapa');
+  if (!mapaEls) {
+    el('circle', { cx: 0, cy: 0, r: 385, fill: '#fff' }, svg);
+    el('circle', { cx: 0, cy: 0, r: 360, fill: '#0b0908' }, svg);
+    el('line', { x1: -60, y1: -50, x2: 60, y2: -50, stroke: '#5a4a3e', 'stroke-width': 6 }, svg);
+    el('line', { x1: -60, y1: 50, x2: 60, y2: 50, stroke: '#5a4a3e', 'stroke-width': 6 }, svg);
+    const rival = el('g', {}, svg);
+    el('rect', { x: -49, y: -49, width: 98, height: 98, rx: 6, fill: '#777' }, rival);
+    el('rect', { x: -49, y: -49, width: 98, height: 12, fill: '#333' }, rival);
+    const robot = el('g', {}, svg);
+    el('rect', { x: -49, y: -49, width: 98, height: 98, rx: 6, fill: 'var(--accent)' }, robot);
+    el('rect', { x: -49, y: -49, width: 98, height: 12, fill: '#1a0d03' }, robot);
+    mapaEls = { rival, robot };
+  }
+  const r = sim.r, rv = sim.rv;
+  mapaEls.robot.setAttribute('transform', `translate(${r.x} ${-r.y}) rotate(${r.th * 180 / Math.PI})`);
+  mapaEls.rival.setAttribute('transform', `translate(${rv.x} ${-rv.y}) rotate(${rv.th * 180 / Math.PI})`);
+}
+
+// ---------------------------------------------------------------- controles
+function marcarModo() {
+  for (const b of $('seg').children) b.classList.toggle('sel', b.dataset.modo === modoSel);
+  $('secManual').classList.toggle('bloqueado', modoSel !== 'M');
+}
+$('seg').addEventListener('click', e => {
+  const m = e.target.dataset.modo;
+  if (!m) return;
+  modoSel = m; guardar('modo', m); marcarModo();
+  enviar('MODO ' + m);
+});
+$('btnStart').onclick = () => enviar('START');
+$('simReset').onclick = () => { if (transporte?.esDemo) { transporte.detener('reacomodado'); transporte.reacomodar(); dibujarMapa(transporte); } };
+$('simSalida').addEventListener('change', () => { if (transporte?.esDemo && transporte.estado === 'E') { transporte.reacomodar(); dibujarMapa(transporte); } });
+$('chkPrueba').addEventListener('change', e => enviar('PRUEBA ' + (e.target.checked ? 1 : 0)));
+$('btnStop').onclick = () => enviar('STOP');
+$('btnConectar').onclick = () => {
+  if (transporte && !transporte.esDemo) { transporte.cerrar(); transporte = null; actualizarConexion(null); log('Desconectado'); return; }
+  if (!navigator.bluetooth) { mostrarAvisoBT(); log('Este navegador no expone Bluetooth web', 'err'); return; }
+  log('Buscando dispositivos Bluetooth…');
+  conectar(false);
+};
+$('btnDemo').onclick = () => {
+  if (transporte?.esDemo) { transporte.cerrar(); transporte = null; actualizarConexion(null); log('Demo detenido'); return; }
+  if (transporte) transporte.cerrar();
+  conectar(true);
+};
+
+for (const [id, k] of [['vel', 'vel'], ['velMan', 'velMan']]) {
+  const inp = $(id);
+  inp.value = leer(k, inp.value);
+  $(id + 'Out').textContent = inp.value;
+  inp.addEventListener('input', () => { $(id + 'Out').textContent = inp.value; guardar(k, inp.value); });
+}
+$('vel').addEventListener('change', () => enviar('VEL ' + $('vel').value));
+function mostrarUmbrales() {
+  if (!umbrales) { $('calEstado').textContent = 'Umbrales: sin datos'; return; }
+  const txt = QRE_GEO.map(([n], i) => `${n} ${umbrales.u[i]}`).join(' · ');
+  $('calEstado').innerHTML = (umbrales.cal ? '✅ Calibrado: ' : '⚠️ <b>Sin calibrar</b> (valores por defecto): ') + txt;
+}
+const PASOS_CAL = [
+  ['Calibrar línea', ''],
+  ['1. Medir negro', '<b>Paso 1:</b> pon el robot quieto sobre el <b>negro</b>, con los 4 sensores lejos de la franja blanca, y pulsa <b>Medir negro</b>.'],
+  ['2. Medir gris', '<b>Paso 2:</b> desliza el robot <b>sin levantarlo</b> para que <b>cada uno de los 4 sensores</b> pase por la franja blanca. Luego pulsa <b>Medir gris</b> (o <b>Terminar sin gris</b> si tu dohyo no tiene líneas de salida).'],
+  ['3. Terminar', '<b>Paso 3:</b> pasa <b>cada uno de los 4 sensores</b> por las <b>líneas grises</b> de salida, <b>sin tocar el blanco</b>. Luego pulsa <b>Terminar</b>.'],
+];
+function mostrarPasoCal() {
+  const [boton, ayuda] = PASOS_CAL[calPaso];
+  $('btnCal').textContent = boton;
+  $('btnCal').classList.toggle('activo', calPaso > 0);
+  $('calAyuda').innerHTML = ayuda;
+  $('calAyuda').hidden = !calPaso;
+  $('btnCalFin').hidden = calPaso !== 2;
+}
+$('btnCal').onclick = () => {
+  if (calPaso === 1) { enviar('CAL NEGRO'); enviar('CAL INICIO'); }
+  if (calPaso === 2) enviar('CAL GRIS');
+  if (calPaso === 3) enviar('CAL FIN');
+  calPaso = (calPaso + 1) % 4;
+  mostrarPasoCal();
+};
+$('btnCalFin').onclick = () => { enviar('CAL FIN'); calPaso = 0; mostrarPasoCal(); };
+
+// Joystick: x, y en -1…1 → mezcla diferencial. Mientras se sostiene, se reenvía cada 50 ms
+// (el robot frena si deja de recibir órdenes por 300 ms).
+let joy = { x: 0, y: 0, activo: false };
+const teclas = new Set();
+function mezcla(x, y) {
+  let i = y + x, d = y - x;
+  const m = Math.max(1, Math.abs(i), Math.abs(d));
+  const v = +$('velMan').value;
+  return [Math.round(i / m * v), Math.round(d / m * v)];
+}
+function moverKnob(x, y) { $('knob').style.transform = `translate(${x * 65}px, ${-y * 65}px)`; }
+const zona = $('joy');
+zona.addEventListener('pointerdown', e => { zona.setPointerCapture(e.pointerId); joy.activo = true; zona.classList.add('activo'); arrastrar(e); });
+zona.addEventListener('pointermove', e => joy.activo && arrastrar(e));
+const soltar = () => { if (!joy.activo) return; joy = { x: 0, y: 0, activo: false }; zona.classList.remove('activo'); moverKnob(0, 0); enviar('MAN 0 0'); };
+zona.addEventListener('pointerup', soltar);
+zona.addEventListener('pointercancel', soltar);
+function arrastrar(e) {
+  const r = zona.getBoundingClientRect();
+  let x = (e.clientX - r.left - r.width / 2) / (r.width / 2 - 35);
+  let y = -(e.clientY - r.top - r.height / 2) / (r.height / 2 - 35);
+  const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+  joy.x = x; joy.y = y; moverKnob(x, y);
+}
+const MAPA_TECLAS = { ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
+addEventListener('keydown', e => {
+  if (!MAPA_TECLAS[e.code] || modoSel !== 'M' || e.target.tagName === 'INPUT') return;
+  e.preventDefault(); teclas.add(e.code);
+});
+addEventListener('keyup', e => {
+  if (!teclas.delete(e.code)) return;
+  if (!teclas.size) { moverKnob(0, 0); enviar('MAN 0 0'); }
+});
+setInterval(() => {
+  if (!transporte || modoSel !== 'M') return;
+  let x = joy.x, y = joy.y;
+  if (teclas.size) {
+    x = 0; y = 0;
+    for (const t of teclas) { x += MAPA_TECLAS[t][0]; y += MAPA_TECLAS[t][1]; }
+    x *= 0.6; moverKnob(Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
+  }
+  if (joy.activo || teclas.size) enviar('MAN ' + mezcla(x, y).join(' '));
+}, 50);
+
+// Sin telemetría por 1 s → avisar
+setInterval(() => {
+  if (transporte && ultimaT && performance.now() - ultimaT > 1000) $('txtEstado').textContent = 'Sin datos…';
+}, 500);
+
+function mostrarAvisoBT() {
+  const a = $('avisoBT');
+  const ios = /iPhone|iPad/.test(navigator.userAgent);
+  a.innerHTML = ios
+    ? '<b>Safari no soporta Bluetooth web.</b> En iPhone abre esta página con la app <b>Bluefy</b>. Mientras, puedes usar el <b>Modo demo</b>.'
+    : '<b>Este navegador no tiene Bluetooth web.</b> Usa <b>Chrome</b> o <b>Edge</b> (en PC o Android), con la página abierta desde <code>https://</code> o <code>localhost</code>. Mientras, puedes usar el <b>Modo demo</b>.';
+  a.hidden = false;
+}
+
+// App instalable y sin internet: solo en https o localhost (no al abrir el archivo directo).
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(e => log('No se pudo activar el modo sin internet: ' + e.message, 'err'));
+}
+
+armarRobot();
+marcarModo();
+log('Listo. Pulsa “Conectar Bluetooth” o “Modo demo”.');
+</script>
+</body>
+</html>
