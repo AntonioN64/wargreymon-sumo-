@@ -261,7 +261,7 @@ const SIM = {
 };
 const ESTRATEGIA = { ALCANCE_RIVAL: 600, T_CONTACTO: 300, TAN10: 0.176, MIN_VALIDO: 40, FLANCO_CERCA: 150,
   T_BUSCA_GIRO: 1400, T_BUSCA_AVANCE: 600,
-  T_FRENO: 40, T_EMPUJE_FINAL: 150, T_RETRO_RECTO: 180, T_RETRO_CURVA: 350, T_RETRO_CURVA_180: 500,
+  T_FRENO: 40, T_EMPUJE_FINAL: 150, T_RETRO: 250, T_GIRO: 300, T_MEDIA_VUELTA: 500,
   T_AVANCE_FUERTE: 250, T_GIRO_CENTRO: 220, ENFRIAR_EMPUJE: 1000 };
 
 class TransporteDemo {
@@ -348,51 +348,45 @@ class TransporteDemo {
   ve(i) { return this.tof[i] >= ESTRATEGIA.MIN_VALIDO && this.tof[i] < ESTRATEGIA.ALCANCE_RIVAL; }
   pegado(i) { return this.tof[i] >= 0 && this.tof[i] < ESTRATEGIA.MIN_VALIDO; }
   enContacto() { return this.t - this.ultimoAtaque < ESTRATEGIA.T_CONTACTO && (this.pegado(0) || this.pegado(1)); }
-  rivalAlFrente() { return this.ve(0) || this.ve(1) || this.enContacto(); }
   retirarse(fi, fd) {
     const E = ESTRATEGIA;
-    if (this.rivalAlFrente()) {
-      this.iniciarManiobra('RETRO_RECTO', E.T_FRENO + this.escalar(E.T_RETRO_RECTO));
-      this.alRecibir('I,linea adelante con rival enfrente -> atras recto, sin darle la espalda');
-    } else {
-      this.giroSentido = fi && fd ? (Math.random() < .5 ? 1 : -1) : (fi ? 1 : -1);
-      this.iniciarManiobra('RETRO_CURVA', E.T_FRENO + this.escalar(fi && fd ? E.T_RETRO_CURVA_180 : E.T_RETRO_CURVA));
-      this.alRecibir(`I,linea ${fi ? 'FI' : ''}${fd ? 'FD' : ''} -> atras en curva ${this.giroSentido > 0 ? 'der' : 'izq'}`);
-    }
+    this.giroSentido = fi && fd ? (Math.random() < .5 ? 1 : -1) : (fi ? 1 : -1);
+    this.giroMs = fi && fd ? E.T_MEDIA_VUELTA : E.T_GIRO;
+    this.iniciarManiobra('RETROCESO', E.T_FRENO + this.escalar(E.T_RETRO));
+    this.alRecibir(`I,linea ${fi ? 'FI' : ''}${fd ? 'FD' : ''} -> atras y giro ${fi && fd ? '180' : this.giroSentido > 0 ? 'der' : 'izq'}`);
   }
   reaccionLinea() {
     const [fi, fd, ti, td] = this.enLinea, frente = fi || fd, atras = ti || td, E = ESTRATEGIA;
-    const retirandose = this.maniobra === 'RETRO_RECTO' || this.maniobra === 'RETRO_CURVA';
     if ((fi && ti && !fd && !td) || (fd && td && !fi && !ti)) {
       if (this.maniobra !== 'GIRO_CENTRO') {
         this.giroSentido = fi ? 1 : -1;
         this.iniciarManiobra('GIRO_CENTRO', this.escalar(E.T_GIRO_CENTRO));
         this.alRecibir(fi ? 'I,costado izq en la linea -> giro der' : 'I,costado der en la linea -> giro izq');
       }
-    } else if (frente && this.maniobra !== 'EMPUJE_FINAL' && !retirandose && this.maniobra !== 'GIRO_CENTRO') {
+    } else if (frente && !['EMPUJE_FINAL', 'RETROCESO', 'GIRO_CENTRO'].includes(this.maniobra)) {
       if (this.enContacto() && this.t - this.ultimoEmpujeFinal > E.ENFRIAR_EMPUJE) {
         this.ultimoEmpujeFinal = this.t;
         this.iniciarManiobra('EMPUJE_FINAL', E.T_EMPUJE_FINAL);
         this.alRecibir('I,linea empujando al rival -> EMPUJE FINAL');
       } else this.retirarse(fi, fd);
-    } else if (atras && !frente && retirandose) {
-      this.iniciarManiobra('GIRO_CENTRO', this.escalar(E.T_GIRO_CENTRO));
-      this.alRecibir('I,linea atras durante la retirada -> giro');
-    } else if (atras && !frente && this.maniobra !== 'AVANCE_FUERTE' && this.maniobra !== 'GIRO_CENTRO') {
+    } else if (atras && !frente && this.maniobra === 'RETROCESO') {
+      this.iniciarManiobra('GIRO', this.escalar(this.giroMs));
+      this.alRecibir('I,linea atras durante el retroceso -> giro');
+    } else if (atras && !frente && (this.maniobra === 'CRUCERO' || this.maniobra === 'GIRO')) {
       this.iniciarManiobra('AVANCE_FUERTE', E.T_AVANCE_FUERTE);
       this.alRecibir('I,linea atras (me empujan) -> adelante a fondo');
     }
     if (this.maniobra !== 'CRUCERO' && this.t >= this.finManiobra) {
       if (this.maniobra === 'EMPUJE_FINAL' && (this.enLinea[0] || this.enLinea[1])) this.retirarse(this.enLinea[0], this.enLinea[1]);
+      else if (this.maniobra === 'RETROCESO') this.iniciarManiobra('GIRO', this.escalar(this.giroMs));
       else this.maniobra = 'CRUCERO';
     }
-    const v = this.vel, g = this.giroSentido, frenando = this.t - this.inicioManiobra < E.T_FRENO;
+    const v = this.vel, g = this.giroSentido;
     switch (this.maniobra) {
       case 'CRUCERO': return null;
       case 'EMPUJE_FINAL': case 'AVANCE_FUERTE': return [255, 255];
-      case 'RETRO_RECTO': return frenando ? [0, 0] : [-v, -v];
-      case 'RETRO_CURVA': return frenando ? [0, 0] : (g > 0 ? [v / 5, -v] : [-v, v / 5]);
-      case 'GIRO_CENTRO': return [v * g, -v * g];
+      case 'RETROCESO': return this.t - this.inicioManiobra < E.T_FRENO ? [0, 0] : [-v, -v];
+      case 'GIRO': case 'GIRO_CENTRO': return [v * g, -v * g];
     }
   }
   estrategia() {
