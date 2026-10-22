@@ -223,23 +223,17 @@ class TransporteBLE {
     const tx = await servicio.getCharacteristic(NUS_TX);
     const dec = new TextDecoder();
     // Acepta los dos formatos del firmware: un mensaje completo por notificación, o mensajes
-    // partidos en trozos de 20 bytes que terminan en '
-'. Un trozo de 20 sin '
-' se guarda
+    // partidos en trozos de 20 bytes que terminan en '\n'. Un trozo de 20 sin '\n' se guarda
     // hasta completar la línea; si nada lo completa en 80 ms, se entrega tal cual.
     this.pendiente = '';
-    const entregar = texto => { for (const l of texto.split('
-')) if (l) this.alRecibir(l); };
+    const entregar = texto => { for (const l of texto.split('\n')) if (l) this.alRecibir(l); };
     tx.addEventListener('characteristicvaluechanged', e => {
       const trozo = dec.decode(e.target.value);
       clearTimeout(this.vencePendiente);
-      if (trozo.includes('
-')) {
-        const lineas = (this.pendiente + trozo).split('
-');
+      if (trozo.includes('\n')) {
+        const lineas = (this.pendiente + trozo).split('\n');
         this.pendiente = lineas.pop();
-        entregar(lineas.join('
-'));
+        entregar(lineas.join('\n'));
       } else if (this.pendiente || e.target.value.byteLength === 20) {
         this.pendiente += trozo;
       } else {
