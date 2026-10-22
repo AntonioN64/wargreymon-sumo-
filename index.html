@@ -222,7 +222,15 @@ class TransporteBLE {
     this.rx = await servicio.getCharacteristic(NUS_RX);
     const tx = await servicio.getCharacteristic(NUS_TX);
     const dec = new TextDecoder();
-    tx.addEventListener('characteristicvaluechanged', e => this.alRecibir(dec.decode(e.target.value)));
+    // El robot manda cada mensaje en trozos de 20 bytes terminado en '\n': juntar hasta el fin de línea.
+    this.pendiente = '';
+    tx.addEventListener('characteristicvaluechanged', e => {
+      this.pendiente += dec.decode(e.target.value);
+      const lineas = this.pendiente.split('\n');
+      this.pendiente = lineas.pop();
+      if (this.pendiente.length > 400) { lineas.push(this.pendiente); this.pendiente = ''; }   // firmware viejo sin '\n'
+      for (const l of lineas) if (l) this.alRecibir(l);
+    });
     await tx.startNotifications();
     return this.dispositivo.name;
   }
