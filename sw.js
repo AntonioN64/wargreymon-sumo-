@@ -1,7 +1,7 @@
 // Service worker: guarda la app en el teléfono para que abra sin internet (p. ej. en el torneo).
 // Estrategia: responde con lo guardado al instante y, si hay red, actualiza en segundo plano.
 // Para forzar que todos los teléfonos descarguen una versión nueva, cambia VERSION.
-const VERSION = 'wargreymon-v4';
+const VERSION = 'wargreymon-v5';
 const ARCHIVOS = ['./', './index.html', './manifest.webmanifest',
                   './icono-192.png', './icono-512.png', './icono-maskable-512.png', './apple-touch-icon.png'];
 
