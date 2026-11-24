@@ -3,7 +3,7 @@
   "short_name": "WarGreymon",
   "description": "Control por Bluetooth del robot mini sumo WarGreymon",
   "lang": "es",
-  "start_url": "./",
+  "start_url": "./index2.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
