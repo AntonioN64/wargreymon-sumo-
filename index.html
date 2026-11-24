@@ -103,6 +103,10 @@
   .simCtl { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
   .simCtl select { font: inherit; color: var(--fg); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
   #simMarcador { margin-left: auto; color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .voz { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .voz .nota { margin: 0; }
+  #btnVoz.activo { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; animation: latido 1.2s ease-in-out infinite; }
+  @keyframes latido { 50% { opacity: .65; } }
   .aviso { background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
            font-size: 13px; }
 </style>
@@ -125,6 +129,10 @@
     <div class="estado"><b id="txtEstado">Sin conexión</b><small id="txtModo"></small></div>
     <div id="cuenta" class="cuenta" hidden>5.0</div>
     <div id="accion" class="accion" hidden></div>
+    <div class="voz">
+      <button id="btnVoz">🎤 Voz</button>
+      <span id="vozEstado" class="nota"></span>
+    </div>
     <div class="acciones">
       <button id="btnStart" disabled>ARRANCAR</button>
       <button id="btnStop" disabled>DETENER</button>
@@ -148,6 +156,8 @@
           <span>Der</span><div class="barra"><i id="barD"></i></div><output id="valD">0</output>
         </div>
         <p class="nota">Elige <b>Manual</b> y pulsa ARRANCAR (cuenta de 5 s). En PC también sirven las flechas o WASD. Si sueltas el control o se corta la señal, el robot frena en 0.3 s.</p>
+        <p class="nota" id="padEstado">🎮 Sin control. Emparéjalo con el teléfono por Bluetooth y presiona cualquier botón.</p>
+        <p class="nota"><b>Control:</b> palanca o cruceta = manejar · RT turbo · LT despacio · A/✕ arrancar · B/○ detener · X/□ manual · Y/△ autónomo</p>
       </div>
     </div>
   </section>
@@ -781,10 +791,10 @@ $('btnCalFin').onclick = () => { enviar('CAL FIN'); calPaso = 0; mostrarPasoCal(
 // (el robot frena si deja de recibir órdenes por 300 ms).
 let joy = { x: 0, y: 0, activo: false };
 const teclas = new Set();
-function mezcla(x, y) {
+function mezcla(x, y, vel = null) {
   let i = y + x, d = y - x;
   const m = Math.max(1, Math.abs(i), Math.abs(d));
-  const v = +$('velMan').value;
+  const v = vel ?? +$('velMan').value;
   return [Math.round(i / m * v), Math.round(d / m * v)];
 }
 function moverKnob(x, y) { $('knob').style.transform = `translate(${x * 65}px, ${-y * 65}px)`; }
@@ -810,15 +820,130 @@ addEventListener('keyup', e => {
   if (!teclas.delete(e.code)) return;
   if (!teclas.size) { moverKnob(0, 0); enviar('MAN 0 0'); }
 });
-setInterval(() => {
-  if (!transporte || modoSel !== 'M') return;
-  let x = joy.x, y = joy.y;
-  if (teclas.size) {
-    x = 0; y = 0;
-    for (const t of teclas) { x += MAPA_TECLAS[t][0]; y += MAPA_TECLAS[t][1]; }
-    x *= 0.6; moverKnob(Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
+// ---------------------------------------------------------------- control remoto (Gamepad API)
+// El control se empareja con el teléfono (o la PC); Chrome lo expone con el mapeo estándar:
+// botones 0 A/✕, 1 B/○, 2 X/□, 3 Y/△, 6 LT, 7 RT, 8 Select, 9 Start, 12–15 cruceta.
+const ZONA_MUERTA = 0.18;
+const BOTONES_PAD = { 0: 'START', 9: 'START', 1: 'STOP', 8: 'STOP', 2: 'MODO M', 3: 'MODO A' };
+let padAnterior = [];
+let avisoPadAutonomo = 0;
+
+function leerControl() {
+  const pad = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
+  if (!pad) return null;
+  // Botones: solo al presionarse (flanco), funcionan en cualquier modo.
+  pad.buttons.forEach((b, i) => {
+    if (b.pressed && !padAnterior[i] && BOTONES_PAD[i]) ordenRapida(BOTONES_PAD[i], '🎮');
+  });
+  padAnterior = pad.buttons.map(b => b.pressed);
+  let x = pad.axes[0] || 0, y = -(pad.axes[1] || 0);
+  if (Math.hypot(x, y) < ZONA_MUERTA) { x = 0; y = 0; }
+  const cruceta = i => pad.buttons[i]?.pressed ? 1 : 0;
+  if (!x && !y) { x = cruceta(15) - cruceta(14); y = cruceta(12) - cruceta(13); }
+  const turbo = pad.buttons[7]?.value > 0.3, lento = pad.buttons[6]?.value > 0.3;
+  const vel = turbo ? 255 : lento ? Math.round(+$('velMan').value / 2) : null;
+  return { nombre: pad.id, x, y, vel, moviendo: !!(x || y) };
+}
+
+// Órdenes de botones y voz: ARRANCAR solo si está en espera (si no, START cancelaría la cuenta).
+function ordenRapida(orden, origen) {
+  if (orden === 'START' && estadoRobot && estadoRobot !== 'E') return;
+  if (orden.startsWith('MODO ')) {
+    modoSel = orden.slice(5); guardar('modo', modoSel); marcarModo();
   }
-  if (joy.activo || teclas.size) enviar('MAN ' + mezcla(x, y).join(' '));
+  log(`${origen} ${orden === 'START' ? 'ARRANCAR' : orden === 'STOP' ? 'DETENER' : orden === 'MODO M' ? 'modo manual' : 'modo autónomo'}`);
+  enviar(orden);
+}
+
+addEventListener('gamepadconnected', e => { $('padEstado').innerHTML = `🎮 <b>Control conectado:</b> ${e.gamepad.id.replace(/\(.*\)/, '').trim() || 'control'}`; log('Control conectado: ' + e.gamepad.id); });
+addEventListener('gamepaddisconnected', () => { $('padEstado').innerHTML = '🎮 Control desconectado.'; log('Control desconectado'); });
+
+// ---------------------------------------------------------------- comandos de voz (Web Speech API)
+const Reconocedor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let reconocedor = null, escuchando = false;
+let vozMov = null;                     // { x, y, hasta } movimiento corto pedido por voz
+
+const COMANDOS_VOZ = [
+  { palabras: /\b(detente|alto|para|parate|stop|frena|quieto|basta)\b/, hacer: () => { vozMov = null; ordenRapida('STOP', '🎤'); } },
+  { palabras: /\b(arranca|arrancar|empieza|inicia|comienza|pelea|vamos)\b/, hacer: () => ordenRapida('START', '🎤') },
+  { palabras: /\bmanual\b/, hacer: () => ordenRapida('MODO M', '🎤') },
+  { palabras: /\b(autonomo|automatico|solo)\b/, hacer: () => ordenRapida('MODO A', '🎤') },
+  { palabras: /\b(rapido|turbo)\b/, hacer: () => cambiarVelocidad(+40) },
+  { palabras: /\b(lento|despacio)\b/, hacer: () => cambiarVelocidad(-40) },
+  { palabras: /\b(adelante|avanza|enfrente)\b/, hacer: () => moverPorVoz(0, 1, 800) },
+  { palabras: /\b(atras|retrocede|reversa)\b/, hacer: () => moverPorVoz(0, -1, 800) },
+  { palabras: /\bizquierda\b/, hacer: () => moverPorVoz(-1, 0, 400) },
+  { palabras: /\bderecha\b/, hacer: () => moverPorVoz(1, 0, 400) },
+  { palabras: /\b(gira|vuelta)\b/, hacer: () => moverPorVoz(1, 0, 900) },
+];
+
+function cambiarVelocidad(d) {
+  const inp = $('velMan');
+  inp.value = Math.max(+inp.min, Math.min(+inp.max, +inp.value + d));
+  $('velManOut').textContent = inp.value; guardar('velMan', inp.value);
+  log(`🎤 velocidad manual ${inp.value}`);
+}
+function moverPorVoz(x, y, ms) {
+  if (modoSel !== 'M' || estadoRobot !== 'A') { log('🎤 Para moverlo por voz: di "manual", luego "arranca" y espera la cuenta'); return; }
+  vozMov = { x, y, hasta: performance.now() + ms };
+}
+
+function interpretarVoz(texto) {
+  const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  $('vozEstado').textContent = `Escuché: “${texto}”`;
+  const cmd = COMANDOS_VOZ.find(c => c.palabras.test(t));
+  if (cmd) cmd.hacer(); else log(`🎤 No entendí: “${texto}”`);
+}
+
+function alternarVoz() {
+  if (!Reconocedor) return;
+  escuchando = !escuchando;
+  $('btnVoz').classList.toggle('activo', escuchando);
+  $('btnVoz').textContent = escuchando ? '🎤 Escuchando… (toca para parar)' : '🎤 Voz';
+  if (!escuchando) { reconocedor?.stop(); $('vozEstado').textContent = ''; return; }
+  reconocedor = new Reconocedor();
+  reconocedor.lang = 'es-MX';
+  reconocedor.continuous = true;
+  reconocedor.interimResults = false;
+  reconocedor.onresult = e => interpretarVoz(e.results[e.results.length - 1][0].transcript.trim());
+  reconocedor.onerror = e => {
+    const motivo = { 'not-allowed': 'no diste permiso al micrófono', network: 'necesita internet para reconocer la voz', 'no-speech': null }[e.error];
+    if (motivo) { log('🎤 ' + motivo, 'err'); if (e.error === 'not-allowed') alternarVoz(); }
+  };
+  reconocedor.onend = () => { if (escuchando) try { reconocedor.start(); } catch {} };   // Chrome corta solo cada rato
+  reconocedor.start();
+  $('vozEstado').textContent = 'Di: arranca · detente · manual · adelante · derecha…';
+}
+$('btnVoz').onclick = alternarVoz;
+if (!Reconocedor) { $('btnVoz').disabled = true; $('vozEstado').textContent = 'Este navegador no tiene reconocimiento de voz (usa Chrome).'; }
+
+// ---------------------------------------------------------------- envío del manejo (cada 50 ms)
+// Prioridad: voz > control > teclado > joystick en pantalla. Mientras haya movimiento se reenvía
+// cada 50 ms (el robot frena si pasan 300 ms sin orden); al soltar se manda MAN 0 0 una vez.
+let moviendoAntes = false;
+setInterval(() => {
+  const pad = leerControl();
+  if (!transporte) return;
+  if (pad?.moviendo && modoSel !== 'M' && performance.now() - avisoPadAutonomo > 4000) {
+    avisoPadAutonomo = performance.now();
+    log('🎮 Para manejar con el control: botón X / □ (manual) y luego A / ✕ (arrancar)');
+  }
+  if (modoSel !== 'M') return;
+  let x = 0, y = 0, vel = null, activo = false;
+  if (vozMov && performance.now() < vozMov.hasta) { ({ x, y } = vozMov); activo = true; }
+  else if (pad?.moviendo) { ({ x, y, vel } = pad); activo = true; }
+  else if (teclas.size) {
+    for (const t of teclas) { x += MAPA_TECLAS[t][0]; y += MAPA_TECLAS[t][1]; }
+    x *= 0.6; activo = true;
+  } else if (joy.activo) { ({ x, y } = joy); activo = true; }
+  if (activo) {
+    if (!joy.activo) moverKnob(Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
+    enviar('MAN ' + mezcla(x, y, vel).join(' '));
+  } else if (moviendoAntes) {
+    moverKnob(0, 0);
+    enviar('MAN 0 0');
+  }
+  moviendoAntes = activo;
 }, 50);
 
 // Sin telemetría por 1 s → avisar
