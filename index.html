@@ -99,6 +99,8 @@
   .accion { margin-top: 10px; font-size: 22px; font-weight: 700; letter-spacing: .02em; }
   .accion.ataque { color: var(--danger); } .accion.linea { color: var(--warn); } .accion.busca { color: var(--accent2); }
   label.prueba { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .tipoPelea { display: flex; gap: 6px 24px; flex-wrap: wrap; }
+  .tipoPelea label.prueba input { accent-color: var(--accent); }
   label.prueba input { accent-color: var(--warn); width: 18px; height: 18px; margin: 0; flex: none; }
   .simCtl { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
   .simCtl select { font: inherit; color: var(--fg); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
@@ -193,6 +195,10 @@
   <section style="grid-column: 1 / -1">
     <h2>Bitácora</h2>
     <div id="log"></div>
+    <div class="tipoPelea">
+      <label class="prueba"><input type="checkbox" id="chkSumo"> <span><b>Modo sumo</b>: pelea normal; si empuja al rival hasta el borde, acelera a fondo para sacarlo (empuje final)</span></label>
+      <label class="prueba"><input type="checkbox" id="chkDemostracion"> <span><b>Modo demostración</b>: igual que el sumo, pero <b>sin el empuje final</b> (no acelera a fondo en el borde)</span></label>
+    </div>
   </section>
 </div>
 
@@ -326,6 +332,10 @@ class TransporteDemo {
       else this.detener('arranque cancelado');
     } else if (cmd === 'STOP') this.detener('orden STOP');
     else if (cmd === 'PING') this.alRecibir('PONG');
+    else if (cmd === 'DEMO') {
+      this.demostracion = a === '1';
+      this.alRecibir(this.demostracion ? 'I,modo demostracion: sin empuje final' : 'I,modo sumo normal: con empuje final');
+    }
     else if (cmd === 'PRUEBA') {
       this.prueba = a === '1' ? 1 : 0;
       this.alRecibir(this.prueba ? 'I,modo prueba: decide pero NO mueve los motores' : 'I,modo prueba apagado: motores activos');
@@ -393,7 +403,7 @@ class TransporteDemo {
         this.alRecibir(fi ? 'I,costado izq en la linea -> giro der' : 'I,costado der en la linea -> giro izq');
       }
     } else if (frente && !['EMPUJE_FINAL', 'RETROCESO', 'GIRO_CENTRO'].includes(this.maniobra)) {
-      if (this.enContacto() && this.t - this.ultimoEmpujeFinal > E.ENFRIAR_EMPUJE) {
+      if (!this.demostracion && this.enContacto() && this.t - this.ultimoEmpujeFinal > E.ENFRIAR_EMPUJE) {
         this.ultimoEmpujeFinal = this.t;
         this.iniciarManiobra('EMPUJE_FINAL', E.T_EMPUJE_FINAL);
         this.alRecibir('I,linea empujando al rival -> EMPUJE FINAL');
@@ -585,6 +595,7 @@ async function conectar(demo) {
     enviar('VEL ' + $('vel').value);
     enviar('CAL ?');
     enviar('PRUEBA ' + ($('chkPrueba').checked ? 1 : 0));
+    enviar('DEMO ' + ($('chkDemostracion').checked ? 1 : 0));
   } catch (e) {
     const cancelado = e.name === 'NotFoundError' && /cancel/i.test(e.message);
     log(cancelado ? 'Conexión cancelada (no elegiste dispositivo)' : `No se pudo conectar: ${e.name}: ${e.message}`, cancelado ? '' : 'err');
@@ -740,6 +751,19 @@ $('btnStart').onclick = () => enviar('START');
 $('simReset').onclick = () => { if (transporte?.esDemo) { transporte.detener('reacomodado'); transporte.reacomodar(); dibujarMapa(transporte); } };
 $('simSalida').addEventListener('change', () => { if (transporte?.esDemo && transporte.estado === 'E') { transporte.reacomodar(); dibujarMapa(transporte); } });
 $('chkPrueba').addEventListener('change', e => enviar('PRUEBA ' + (e.target.checked ? 1 : 0)));
+
+// Modo sumo / modo demostración: siempre hay exactamente uno marcado. La única diferencia es que
+// en demostración el robot no hace el EMPUJE FINAL. Se recuerda en el teléfono y se reenvía al conectar.
+function marcarDemostracion(d) { $('chkSumo').checked = !d; $('chkDemostracion').checked = d; }
+marcarDemostracion(leer('demostracion', '0') === '1');
+for (const [id, d] of [['chkSumo', false], ['chkDemostracion', true]]) {
+  $(id).addEventListener('change', () => {
+    marcarDemostracion(d);
+    guardar('demostracion', d ? 1 : 0);
+    if (!transporte) log(d ? 'Modo demostración: se aplicará al conectar' : 'Modo sumo: se aplicará al conectar');
+    enviar('DEMO ' + (d ? 1 : 0));
+  });
+}
 $('btnStop').onclick = () => enviar('STOP');
 $('btnConectar').onclick = () => {
   if (transporte && !transporte.esDemo) { transporte.cerrar(); transporte = null; actualizarConexion(null); log('Desconectado'); return; }
