@@ -316,7 +316,8 @@ class TransporteDemo {
   enviar(orden) {
     const [cmd, a, b] = orden.trim().split(/\s+/);
     if (cmd === 'START') {
-      if (this.estado === 'E') { this.estado = 'C'; this.inicio = this.t; this.alRecibir('I,cuenta de 5 s'); }
+      if (this.estado === 'E' && this.modo === 'M') { this.estado = 'A'; this.maniobra = 'CRUCERO'; this.alRecibir('I,manual activo'); }
+      else if (this.estado === 'E') { this.estado = 'C'; this.inicio = this.t; this.alRecibir('I,cuenta de 5 s'); }
       else this.detener('arranque cancelado');
     } else if (cmd === 'STOP') this.detener('orden STOP');
     else if (cmd === 'PING') this.alRecibir('PONG');
@@ -879,7 +880,7 @@ function cambiarVelocidad(d) {
   log(`🎤 velocidad manual ${inp.value}`);
 }
 function moverPorVoz(x, y, ms) {
-  if (modoSel !== 'M' || estadoRobot !== 'A') { log('🎤 Para moverlo por voz: di "manual", luego "arranca" y espera la cuenta'); return; }
+  if (modoSel !== 'M' || estadoRobot !== 'A') { log('🎤 Para moverlo por voz: di "manual" y luego "arranca"'); return; }
   vozMov = { x, y, hasta: performance.now() + ms };
 }
 
